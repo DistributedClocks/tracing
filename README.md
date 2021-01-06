@@ -21,4 +21,4 @@ The TracingServer will aggregate all recorded actions and write them out to
 a JSON file, which can be used both for grading and for debugging via
 external processing.
 
-
+See https://godoc.org/github.com/bestchai/tracing for API-level documentation.
