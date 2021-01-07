@@ -84,23 +84,32 @@ func NewTracingServer(configFile string) *TracingServer {
 	return tracingServer
 }
 
+type RecordActionArg struct {
+	TracerIdentity string
+	Record         interface{}
+}
 type RecordActionResult struct{}
 
-// RecordAction writes the record argument as a JSON-encoded record, tagging the record with its type name.
-func (tracingServer *TracingServer) RecordAction(record interface{}, result *RecordActionResult) error {
+// RecordAction writes the Record field of the argument as a JSON-encoded record, tagging the record with its type name.
+// It also tags the result with TracerIdentity, which tracks the identity given to the tracer reporting the event
+func (tracingServer *TracingServer) RecordAction(arg RecordActionArg, result *RecordActionResult) error {
 	type TraceRecord struct {
-		Name string
-		Body interface{}
+		TracerIdentity string
+		Name           string
+		Body           interface{}
 	}
+	record := arg.Record
 	wrappedRecord := TraceRecord{
-		Name: reflect.TypeOf(record).String(),
-		Body: record,
+		TracerIdentity: arg.TracerIdentity,
+		Name:           reflect.TypeOf(record).String(),
+		Body:           record,
 	}
 	return tracingServer.recordEncoder.Encode(wrappedRecord)
 }
 
 type Tracer struct {
 	lock        sync.Mutex
+	identity    string
 	client      *rpc.Client
 	secret      []byte
 	shouldPrint bool
@@ -110,6 +119,7 @@ type Tracer struct {
 //
 // Configuration is loaded from the JSON-formatted configFile, which should specify:
 // 	- ServerAddress, an ip:port pair identifying a tracing server, as one might pass to rpc.Dial
+// 	- TracerIdentity, a unique string giving the tracer an identity that tracks which tracer reported which action
 // 	- Secret [TODO]
 //
 // Note that each instance of Tracer is thread-safe.
@@ -120,8 +130,9 @@ func NewTracer(configFile string) *Tracer {
 	}
 
 	type Config struct {
-		ServerAddress string
-		Secret        []byte
+		ServerAddress  string
+		TracerIdentity string
+		Secret         []byte
 	}
 	config := new(Config)
 	err = json.Unmarshal(configData, config)
@@ -136,6 +147,7 @@ func NewTracer(configFile string) *Tracer {
 
 	tracer := &Tracer{
 		client:      client,
+		identity:    config.TracerIdentity,
 		shouldPrint: true,
 	}
 
@@ -145,13 +157,13 @@ func NewTracer(configFile string) *Tracer {
 // RecordAction ensures that the record is recorded by the tracing server,
 // and optionally logs the record's contents. record can be any struct value; its contents will be extracted via reflection.
 //
-// For example, consider:
+// For example, consider (with tracer id "id"):
 // 	struct MyRecord { Foo string; Bar string }
 // and the call:
 // 	RecordAction(MyRecord{ Foo: "foo", Bar: "bar" })
 //
 // This will result in a log (and relevant tracing data) that contains the following:
-// 	MyRecord Foo="foo", Bar="bar"
+// 	[id] MyRecord Foo="foo", Bar="bar"
 func (tracer *Tracer) RecordAction(record interface{}) {
 	tracer.lock.Lock()
 	defer tracer.lock.Unlock()
@@ -161,9 +173,9 @@ func (tracer *Tracer) RecordAction(record interface{}) {
 		recType := reflect.TypeOf(record)
 		numFields := recVal.NumField()
 
-		// log a human-readable representation, of the form "StructType field1=val1, field2=val2, ..."
-		logStr := recType.Name() + " "
-		logParams := []interface{}{}
+		// log a human-readable representation, of the form "[identity] StructType field1=val1, field2=val2, ..."
+		logStr := "[%s] %s "
+		logParams := []interface{}{tracer.identity, recType.Name()}
 		{
 			isFirst := true
 			for i := 0; i < numFields; i++ {
