@@ -2,24 +2,17 @@ package main
 
 import (
 	"log"
-	"net"
-	"net/rpc"
 
 	"github.com/bestchai/tracing"
 )
 
 func main() {
-	tracingServer := tracing.NewTracingServer("config.json")
+	tracingServer := tracing.NewTracingServerFromFile("config.json")
 
-	err := rpc.Register(tracingServer)
+	err := tracingServer.Open()
 	if err != nil {
-		log.Fatal("registering tracing server: ", err)
+		log.Fatal(err)
 	}
 
-	listener, err := net.Listen("tcp", tracingServer.Config.ServerBind)
-	if err != nil {
-		log.Fatal("listening on tracing server bind: ", err)
-	}
-
-	rpc.Accept(listener) // serve requests forever
+	tracingServer.Accept() // serve requests forever
 }

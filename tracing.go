@@ -21,6 +21,7 @@ package tracing
 
 import (
 	"log"
+	"net"
 	"os"
 	"reflect"
 	"sync"
@@ -46,12 +47,15 @@ type TracingServerConfig struct {
 
 // TracingServer should be used with rpc.Register, as an RPC target.
 type TracingServer struct {
+	listener      net.Listener
+	acceptDone    chan struct{}
+	rpcServer     *rpc.Server
 	recordFile    *os.File
 	recordEncoder *json.Encoder
 	Config        *TracingServerConfig
 }
 
-// NewTracingServer instantiates a new tracing server.
+// NewTracingServerFromFile instantiates a new tracing server.
 //
 // Configuration is loaded from the JSON-formatted configFile, whose fields correspond to
 // the TracingServerConfig struct.
@@ -60,7 +64,7 @@ type TracingServer struct {
 //
 // Note also that this function does not actually set up any RPC/server binding, it handles
 // everything up to that point (opening output files, setting up internals).
-func NewTracingServer(configFile string) *TracingServer {
+func NewTracingServerFromFile(configFile string) *TracingServer {
 	configData, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		log.Fatal("reading config file: ", err)
@@ -72,21 +76,64 @@ func NewTracingServer(configFile string) *TracingServer {
 		log.Fatal("parsing config data: ", err)
 	}
 
-	recordFile, err := os.Create(config.OutputFile)
-	if err != nil {
-		log.Fatal("opening output file: ", err)
-	}
+	return NewTracingServer(*config)
+}
+
+func NewTracingServer(config TracingServerConfig) *TracingServer {
 	tracingServer := &TracingServer{
-		recordFile:    recordFile,
-		recordEncoder: json.NewEncoder(recordFile),
-		Config:        config,
+		acceptDone: make(chan struct{}),
+		Config:     &config,
 	}
 	return tracingServer
 }
 
+func (tracingServer *TracingServer) Open() error {
+	if tracingServer.recordFile == nil {
+		recordFile, err := os.Create(tracingServer.Config.OutputFile)
+		if err != nil {
+			return err
+		}
+		tracingServer.recordFile = recordFile
+		tracingServer.recordEncoder = json.NewEncoder(recordFile)
+	}
+
+	tracingServer.rpcServer = rpc.NewServer()
+
+	err := tracingServer.rpcServer.Register(tracingServer)
+	if err != nil {
+		return err
+	}
+
+	listener, err := net.Listen("tcp", tracingServer.Config.ServerBind)
+	if err != nil {
+		return err
+	}
+	tracingServer.listener = listener
+
+	return nil
+}
+
+func (tracingServer *TracingServer) Accept() {
+	tracingServer.rpcServer.Accept(tracingServer.listener)
+	tracingServer.acceptDone <- struct{}{}
+}
+
+func (tracingServer *TracingServer) Close() error {
+	err := tracingServer.listener.Close()
+	if err != nil {
+		return err
+	}
+	<-tracingServer.acceptDone
+	// close the output file, once the request loop is fully complete
+	err = tracingServer.recordFile.Close()
+	tracingServer.recordFile = nil
+	return err
+}
+
 type RecordActionArg struct {
 	TracerIdentity string
-	Record         interface{}
+	RecordName     string
+	Record         []byte
 }
 type RecordActionResult struct{}
 
@@ -95,16 +142,21 @@ type RecordActionResult struct{}
 func (tracingServer *TracingServer) RecordAction(arg RecordActionArg, result *RecordActionResult) error {
 	type TraceRecord struct {
 		TracerIdentity string
-		Name           string
-		Body           interface{}
+		Tag            string
+		Body           json.RawMessage
 	}
-	record := arg.Record
 	wrappedRecord := TraceRecord{
 		TracerIdentity: arg.TracerIdentity,
-		Name:           reflect.TypeOf(record).String(),
-		Body:           record,
+		Tag:            arg.RecordName,
+		Body:           arg.Record,
 	}
 	return tracingServer.recordEncoder.Encode(wrappedRecord)
+}
+
+type TracerConfig struct {
+	ServerAddress  string // address of the server to send traces to
+	TracerIdentity string // a unique string identifying the tracer
+	Secret         []byte // TODO
 }
 
 type Tracer struct {
@@ -123,23 +175,22 @@ type Tracer struct {
 // 	- Secret [TODO]
 //
 // Note that each instance of Tracer is thread-safe.
-func NewTracer(configFile string) *Tracer {
+func NewTracerFromFile(configFile string) *Tracer {
 	configData, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		log.Fatal("reading config file: ", err)
 	}
 
-	type Config struct {
-		ServerAddress  string
-		TracerIdentity string
-		Secret         []byte
-	}
-	config := new(Config)
+	config := new(TracerConfig)
 	err = json.Unmarshal(configData, config)
 	if err != nil {
 		log.Fatal("parsing config data: ", err)
 	}
 
+	return NewTracer(*config)
+}
+
+func NewTracer(config TracerConfig) *Tracer {
 	client, err := rpc.Dial("tcp", config.ServerAddress)
 	if err != nil {
 		log.Fatal("dialing server: ", err)
@@ -193,9 +244,17 @@ func (tracer *Tracer) RecordAction(record interface{}) {
 	}
 
 	// send data to tracer server
-	err := tracer.client.Call("TracingServer.RecordAction", &record, nil)
+	marshaledRecord, err := json.Marshal(record)
 	if err != nil {
-		log.Fatal("recording action to remote: ", err)
+		log.Fatal("error marshaling record:", err)
+	}
+	err = tracer.client.Call("TracingServer.RecordAction", RecordActionArg{
+		TracerIdentity: tracer.identity,
+		RecordName:     reflect.TypeOf(record).Name(),
+		Record:         marshaledRecord,
+	}, nil)
+	if err != nil {
+		log.Fatal("error recording action to remote:", err)
 	}
 }
 
