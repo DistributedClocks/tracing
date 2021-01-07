@@ -21,4 +21,12 @@ The TracingServer will aggregate all recorded actions and write them out to
 a JSON file, which can be used both for grading and for debugging via
 external processing.
 
+# installation
+
+Make sure to run
+```go get github.com/bestchai/tracing@the-latest-commit-hash```
+manually. Otherwise, your local go.mod will remain pinned to an old hash of the tracing library.
+
+# documentation
+
 See https://godoc.org/github.com/bestchai/tracing for API-level documentation.
