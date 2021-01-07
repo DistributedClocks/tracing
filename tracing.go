@@ -47,7 +47,7 @@ type TracingServerConfig struct {
 
 // TracingServer should be used with rpc.Register, as an RPC target.
 type TracingServer struct {
-	listener      net.Listener
+	Listener      net.Listener
 	acceptDone    chan struct{}
 	rpcServer     *rpc.Server
 	recordFile    *os.File
@@ -108,18 +108,18 @@ func (tracingServer *TracingServer) Open() error {
 	if err != nil {
 		return err
 	}
-	tracingServer.listener = listener
+	tracingServer.Listener = listener
 
 	return nil
 }
 
 func (tracingServer *TracingServer) Accept() {
-	tracingServer.rpcServer.Accept(tracingServer.listener)
+	tracingServer.rpcServer.Accept(tracingServer.Listener)
 	tracingServer.acceptDone <- struct{}{}
 }
 
 func (tracingServer *TracingServer) Close() error {
-	err := tracingServer.listener.Close()
+	err := tracingServer.Listener.Close()
 	if err != nil {
 		return err
 	}

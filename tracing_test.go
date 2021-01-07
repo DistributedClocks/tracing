@@ -49,7 +49,7 @@ func TestOneRecord(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		serverBind := server.listener.Addr().String()
+		serverBind := server.Listener.Addr().String()
 		defer server.Close()
 		go server.Accept()
 
@@ -95,7 +95,7 @@ func TestTwoClients(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		serverBind := server.listener.Addr().String()
+		serverBind := server.Listener.Addr().String()
 		defer server.Close()
 		go server.Accept()
 
