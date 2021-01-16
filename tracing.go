@@ -1,4 +1,4 @@
-// In order to allow for precise automatic grading in CPSC 416, the course provides a tracing library.
+// Package tracing provides a tracing library, in order to allow for precise automatic grading in CPSC 416.
 // A trace provides a precise, ordered representation of what your assignment code is doing
 // (well, what it says it's doing), which can be used to assess some things that are
 // unclear from either unit testing or code inspection.
@@ -7,7 +7,7 @@
 //
 // The tracing library is split into two parts: the tracing server TracingServer,
 // and the tracing client Tracer.
-// You should one instance of Tracer per network node, and you should report
+// You should have one instance of Tracer per network node, and you should report
 // any relevant actions that node takes via Tracer.RecordAction.
 // Each report will be defined as a struct type, whose fields will list the details
 // of a given action.
@@ -20,6 +20,7 @@
 package tracing
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -29,6 +30,8 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/rpc"
+
+	"github.com/DistributedClocks/GoVector/govec"
 )
 
 // TracingToken is an abstract token to be used when tracing
@@ -55,7 +58,7 @@ type TracingServer struct {
 	Config        *TracingServerConfig
 }
 
-// NewTracingServerFromFile instantiates a new tracing server.
+// NewTracingServerFromFile instantiates a new tracing server from a configuration file.
 //
 // Configuration is loaded from the JSON-formatted configFile, whose fields correspond to
 // the TracingServerConfig struct.
@@ -79,6 +82,7 @@ func NewTracingServerFromFile(configFile string) *TracingServer {
 	return NewTracingServer(*config)
 }
 
+// NewTracingServer instantiates a new tracing server.
 func NewTracingServer(config TracingServerConfig) *TracingServer {
 	tracingServer := &TracingServer{
 		acceptDone: make(chan struct{}),
@@ -165,9 +169,10 @@ type Tracer struct {
 	client      *rpc.Client
 	secret      []byte
 	shouldPrint bool
+	logger      *govec.GoLog
 }
 
-// NewTracer instantiates a fresh tracer client.
+// NewTracerFromFile instantiates a fresh tracer client from a configuration file.
 //
 // Configuration is loaded from the JSON-formatted configFile, which should specify:
 // 	- ServerAddress, an ip:port pair identifying a tracing server, as one might pass to rpc.Dial
@@ -190,6 +195,7 @@ func NewTracerFromFile(configFile string) *Tracer {
 	return NewTracer(*config)
 }
 
+// NewTracer instantiates a fresh tracer client.
 func NewTracer(config TracerConfig) *Tracer {
 	client, err := rpc.Dial("tcp", config.ServerAddress)
 	if err != nil {
@@ -200,47 +206,46 @@ func NewTracer(config TracerConfig) *Tracer {
 		client:      client,
 		identity:    config.TracerIdentity,
 		shouldPrint: true,
+		logger: govec.InitGoVector(config.TracerIdentity,
+			"GoVector-"+config.TracerIdentity, govec.GetDefaultConfig()),
 	}
 
 	return tracer
 }
 
-// RecordAction ensures that the record is recorded by the tracing server,
-// and optionally logs the record's contents. record can be any struct value; its contents will be extracted via reflection.
-//
-// For example, consider (with tracer id "id"):
-// 	struct MyRecord { Foo string; Bar string }
-// and the call:
-// 	RecordAction(MyRecord{ Foo: "foo", Bar: "bar" })
-//
-// This will result in a log (and relevant tracing data) that contains the following:
-// 	[id] MyRecord Foo="foo", Bar="bar"
-func (tracer *Tracer) RecordAction(record interface{}) {
+// getLogString returns a human-readable representation,
+// of the form "[identity] StructType field1=val1, field2=val2, ..."
+func (tracer *Tracer) getLogString(record interface{}) string {
+	recVal := reflect.ValueOf(record)
+	recType := reflect.TypeOf(record)
+	numFields := recVal.NumField()
+
+	logFormat := "[%s] %s "
+	logParams := []interface{}{tracer.identity, recType.Name()}
+	{
+		isFirst := true
+		for i := 0; i < numFields; i++ {
+			if !isFirst {
+				logFormat += ", "
+			} else {
+				isFirst = false
+			}
+			logFormat += recType.Field(i).Name + "=%v"
+			logParams = append(logParams, recVal.Field(i).Interface())
+		}
+	}
+	return fmt.Sprintf(logFormat, logParams...)
+}
+
+func (tracer *Tracer) recordAction(record interface{}, isLocalEvent bool) {
 	tracer.lock.Lock()
 	defer tracer.lock.Unlock()
 
 	if tracer.shouldPrint {
-		recVal := reflect.ValueOf(record)
-		recType := reflect.TypeOf(record)
-		numFields := recVal.NumField()
-
-		// log a human-readable representation, of the form "[identity] StructType field1=val1, field2=val2, ..."
-		logStr := "[%s] %s "
-		logParams := []interface{}{tracer.identity, recType.Name()}
-		{
-			isFirst := true
-			for i := 0; i < numFields; i++ {
-				if !isFirst {
-					logStr += ", "
-				} else {
-					isFirst = false
-				}
-				logStr += recType.Field(i).Name + "=%v"
-				logParams = append(logParams, recVal.Field(i).Interface())
-			}
-		}
-
-		log.Printf(logStr, logParams...)
+		log.Printf(tracer.getLogString(record))
+	}
+	if isLocalEvent {
+		tracer.logger.LogLocalEvent(tracer.getLogString(record), govec.GetDefaultLogOptions())
 	}
 
 	// send data to tracer server
@@ -258,27 +263,47 @@ func (tracer *Tracer) RecordAction(record interface{}) {
 	}
 }
 
+// RecordAction ensures that the record is recorded by the tracing server,
+// and optionally logs the record's contents. record can be any struct value; its contents will be extracted via reflection.
+//
+// For example, consider (with tracer id "id"):
+// 	struct MyRecord { Foo string; Bar string }
+// and the call:
+// 	RecordAction(MyRecord{ Foo: "foo", Bar: "bar" })
+//
+// This will result in a log (and relevant tracing data) that contains the following:
+// 	[id] MyRecord Foo="foo", Bar="bar"
+func (tracer *Tracer) RecordAction(record interface{}) {
+	tracer.recordAction(record, true)
+}
+
+type PrepareTokenTrace struct{}
+
 type GenerateTokenTrace struct {
 	Token TracingToken // the generated tracing token
 }
 
-// Produces a fresh TracingToken, and records the event via RecordAction.
+// GenerateToken produces a fresh TracingToken, and records the event via RecordAction.
 // This allows analysis of the resulting trace to correlate token generation
 // and token reception.
 func (tracer *Tracer) GenerateToken() TracingToken {
-	token := []byte{} // TODO: actually interesting, identifying data
-	tracer.RecordAction(GenerateTokenTrace{Token: token})
+	token := tracer.logger.PrepareSend(tracer.getLogString(PrepareTokenTrace{}),
+		nil, govec.GetDefaultLogOptions())
+	tracer.recordAction(GenerateTokenTrace{Token: token}, false)
 	return token
 }
 
 type ReceiveTokenTrace struct {
-	Token TracingToken // the token that was received. Has some secret, internal meaning
+	Token TracingToken // the token that was received.
 }
 
 // ReceiveToken records the token by calling RecordAction with
 // ReceiveTokenTrace.
 func (tracer *Tracer) ReceiveToken(token TracingToken) {
-	tracer.RecordAction(ReceiveTokenTrace{Token: token})
+	record := ReceiveTokenTrace{Token: token}
+	tracer.recordAction(record, false)
+	tracer.logger.UnpackReceive(tracer.getLogString(record),
+		token, nil, govec.GetDefaultLogOptions())
 }
 
 // Close cleans up the connection to the tracing server.

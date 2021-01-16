@@ -1,4 +1,4 @@
-# tracing
+# Tracing
 A light-weight library for manual distributed system tracing.
 
 In order to allow for precise automatic grading in CPSC 416, the course provides a tracing library.
@@ -8,25 +8,25 @@ unclear from either unit testing or code inspection.
 These include correct concurrency management, as well as properly following
 any sequencing/causality rules required by the protocol you are implementing.
 
-The tracing library is split into two parts: the tracing server TracingServer,
-and the tracing client Tracer.
-You should one instance of Tracer per network node, and you should report
-any relevant actions that node takes via Tracer.RecordAction.
+The tracing library is split into two parts: the tracing server `TracingServer`,
+and the tracing client `Tracer`.
+You should have one instance of `Tracer` per network node, and you should report
+any relevant actions that node takes via `Tracer.RecordAction`.
 Each report will be defined as a struct type, whose fields will list the details
 of a given action.
 These reports generally double as logging statements, which can be turned
-off and on with Tracer.SetShouldPrint.
+off and on with `Tracer.SetShouldPrint`.
 
-The TracingServer will aggregate all recorded actions and write them out to
+The `TracingServer` will aggregate all recorded actions and write them out to
 a JSON file, which can be used both for grading and for debugging via
 external processing.
 
-# installation
+# Installation
 
 Make sure to run
-```go get github.com/bestchai/tracing@the-latest-commit-hash```
-manually. Otherwise, your local go.mod will remain pinned to an old hash of the tracing library.
+```go get -u github.com/bestchai/tracing```
+manually. Otherwise, your local `go.mod` will remain pinned to an old hash of the tracing library.
 
-# documentation
+# Documentation
 
 See https://godoc.org/github.com/bestchai/tracing for API-level documentation.
