@@ -1,3 +1,3 @@
-module github.com/bestchai/tracing
+module github.com/DistributedClocks/tracing
 
 go 1.14
