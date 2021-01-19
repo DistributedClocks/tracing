@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/bestchai/tracing"
+	"github.com/DistributedClocks/tracing"
 )
 
 func main() {
