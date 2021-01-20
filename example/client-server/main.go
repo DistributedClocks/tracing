@@ -6,7 +6,7 @@ import (
 	"net"
 	"net/rpc"
 
-	"github.com/bestchai/tracing"
+	"github.com/DistributedClocks/tracing"
 )
 
 type Person struct {
