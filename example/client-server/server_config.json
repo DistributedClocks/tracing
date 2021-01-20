@@ -1,0 +1,5 @@
+{
+    "TracerIdentity": "server",
+    "ServerAddress": ":6666",
+    "Secret": ""
+}
