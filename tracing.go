@@ -220,7 +220,7 @@ func (tracer *Tracer) getLogString(record interface{}) string {
 	recType := reflect.TypeOf(record)
 	numFields := recVal.NumField()
 
-	logFormat := "[%s] %s "
+	logFormat := "[%s] %s"
 	logParams := []interface{}{tracer.identity, recType.Name()}
 	{
 		isFirst := true
@@ -228,6 +228,7 @@ func (tracer *Tracer) getLogString(record interface{}) string {
 			if !isFirst {
 				logFormat += ", "
 			} else {
+				logFormat += " "
 				isFirst = false
 			}
 			logFormat += recType.Field(i).Name + "=%v"

@@ -1,3 +1,5 @@
+github.com/DistributedClocks/GoVector v0.0.0-20210119215149-348aa425de2a h1:hqrj1lLq6m4Jw6sV8r5SFz9R1ltQbQVn4gKlQrnNifE=
+github.com/DistributedClocks/GoVector v0.0.0-20210119215149-348aa425de2a/go.mod h1:KhO62KYM3s2gEKM3ESiiI4pgvEPHz96Y1R1ceFpyVBg=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/daviddengcn/go-colortext v1.0.0 h1:ANqDyC0ys6qCSvuEK7l3g5RaehL/Xck9EX8ATG8oKsE=
