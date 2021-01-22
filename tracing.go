@@ -58,6 +58,12 @@ type TracingServer struct {
 	Config        *TracingServerConfig
 }
 
+// ActionRecorder is an abstraction to prevent registering
+// non-action recording functions in the rpc server
+type ActionRecorder struct {
+	server *TracingServer
+}
+
 // NewTracingServerFromFile instantiates a new tracing server from a configuration file.
 //
 // Configuration is loaded from the JSON-formatted configFile, whose fields correspond to
@@ -102,8 +108,8 @@ func (tracingServer *TracingServer) Open() error {
 	}
 
 	tracingServer.rpcServer = rpc.NewServer()
-
-	err := tracingServer.rpcServer.Register(tracingServer)
+	actionRecorder := &ActionRecorder{server: tracingServer}
+	err := tracingServer.rpcServer.Register(actionRecorder)
 	if err != nil {
 		return err
 	}
@@ -118,7 +124,16 @@ func (tracingServer *TracingServer) Open() error {
 }
 
 func (tracingServer *TracingServer) Accept() {
-	tracingServer.rpcServer.Accept(tracingServer.Listener)
+	// This matches exactly the implementation of `rpc.Accept`
+	// https://golang.org/src/net/rpc/server.go?s=18334:18380#L613
+	// except it does not log the listner.Accept error
+	for {
+		conn, err := tracingServer.Listener.Accept()
+		if err != nil {
+			break
+		}
+		go tracingServer.rpcServer.ServeConn(conn)
+	}
 	tracingServer.acceptDone <- struct{}{}
 }
 
@@ -143,7 +158,7 @@ type RecordActionResult struct{}
 
 // RecordAction writes the Record field of the argument as a JSON-encoded record, tagging the record with its type name.
 // It also tags the result with TracerIdentity, which tracks the identity given to the tracer reporting the event
-func (tracingServer *TracingServer) RecordAction(arg RecordActionArg, result *RecordActionResult) error {
+func (actionRecorder *ActionRecorder) RecordAction(arg RecordActionArg, result *RecordActionResult) error {
 	type TraceRecord struct {
 		TracerIdentity string
 		Tag            string
@@ -154,7 +169,7 @@ func (tracingServer *TracingServer) RecordAction(arg RecordActionArg, result *Re
 		Tag:            arg.RecordName,
 		Body:           arg.Record,
 	}
-	return tracingServer.recordEncoder.Encode(wrappedRecord)
+	return actionRecorder.server.recordEncoder.Encode(wrappedRecord)
 }
 
 type TracerConfig struct {
@@ -254,7 +269,7 @@ func (tracer *Tracer) recordAction(record interface{}, isLocalEvent bool) {
 	if err != nil {
 		log.Fatal("error marshaling record:", err)
 	}
-	err = tracer.client.Call("TracingServer.RecordAction", RecordActionArg{
+	err = tracer.client.Call("ActionRecorder.RecordAction", RecordActionArg{
 		TracerIdentity: tracer.identity,
 		RecordName:     reflect.TypeOf(record).Name(),
 		Record:         marshaledRecord,
