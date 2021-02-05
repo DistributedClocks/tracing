@@ -267,7 +267,7 @@ func (tracer *Tracer) recordAction(record interface{}, isLocalEvent bool) {
 	// send data to tracer server
 	marshaledRecord, err := json.Marshal(record)
 	if err != nil {
-		log.Fatal("error marshaling record:", err)
+		log.Print("error marshaling record: ", err)
 	}
 	err = tracer.client.Call("ActionRecorder.RecordAction", RecordActionArg{
 		TracerIdentity: tracer.identity,
@@ -275,7 +275,7 @@ func (tracer *Tracer) recordAction(record interface{}, isLocalEvent bool) {
 		Record:         marshaledRecord,
 	}, nil)
 	if err != nil {
-		log.Fatal("error recording action to remote:", err)
+		log.Print("error recording action to remote: ", err)
 	}
 }
 
