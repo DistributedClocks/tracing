@@ -9,6 +9,8 @@ import (
 	"os"
 )
 
+// TracingServerConfig contains the necessary configuration options for a
+// tracing server.
 type TracingServerConfig struct {
 	ServerBind string // the ip:port pair to which the server should bind, as one might pass to net.Listen
 	Secret     []byte
@@ -25,8 +27,9 @@ type TracingServer struct {
 	Config        *TracingServerConfig
 }
 
-// ActionRecorder is an abstraction to prevent registering
-// non-action recording functions in the rpc server
+// ActionRecorder is an abstraction to prevent registering non-RPC functions
+// in the RPC server. ActionRecorder should be used with rpc.Register, as an
+// RPC target.
 type ActionRecorder struct {
 	server *TracingServer
 }
@@ -64,6 +67,8 @@ func NewTracingServer(config TracingServerConfig) *TracingServer {
 	return tracingServer
 }
 
+// Open creates the related files for the tracing server and starts an RPC server
+// on the specified address.
 func (tracingServer *TracingServer) Open() error {
 	if tracingServer.recordFile == nil {
 		recordFile, err := os.Create(tracingServer.Config.OutputFile)
@@ -90,10 +95,12 @@ func (tracingServer *TracingServer) Open() error {
 	return nil
 }
 
+// Accept accepts connections on the listener and serves requests for each incoming
+// connection. Accept blocks until the listener returns a non-nil error.
+// This implementation matches exactly the implementation of `rpc.Accept` from
+// https://golang.org/src/net/rpc/server.go?s=18334:18380#L613,
+// except it does not log the listner.Accept error.
 func (tracingServer *TracingServer) Accept() {
-	// This matches exactly the implementation of `rpc.Accept`
-	// https://golang.org/src/net/rpc/server.go?s=18334:18380#L613
-	// except it does not log the listner.Accept error
 	for {
 		conn, err := tracingServer.Listener.Accept()
 		if err != nil {
@@ -104,6 +111,7 @@ func (tracingServer *TracingServer) Accept() {
 	tracingServer.acceptDone <- struct{}{}
 }
 
+// Close closes the related opened files and the RPC server.
 func (tracingServer *TracingServer) Close() error {
 	err := tracingServer.Listener.Close()
 	if err != nil {
@@ -116,16 +124,21 @@ func (tracingServer *TracingServer) Close() error {
 	return err
 }
 
+// RecordActionArg indicates RecordAction RPC argument.
 type RecordActionArg struct {
 	TracerIdentity string
 	TraceID        uint64
 	RecordName     string
 	Record         []byte
 }
+
+// RecordActionResult indicates RecordActionRPC output.
 type RecordActionResult struct{}
 
-// RecordAction writes the Record field of the argument as a JSON-encoded record, tagging the record with its type name.
-// It also tags the result with TracerIdentity, which tracks the identity given to the tracer reporting the event
+// RecordAction writes the Record field of the argument as a JSON-encoded record,
+// tagging the record with its type name.
+// It also tags the result with TracerIdentity, which tracks the identity given
+// to the tracer reporting the event.
 func (actionRecorder *ActionRecorder) RecordAction(arg RecordActionArg, result *RecordActionResult) error {
 	type TraceRecord struct {
 		TracerIdentity string

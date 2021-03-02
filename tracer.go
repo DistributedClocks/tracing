@@ -94,7 +94,6 @@ type CreateTrace struct{}
 
 // CreateTrace creates a new trace object with a unique ID. Also, it records a
 // CreateTrace action.
-// TODO
 func (tracer *Tracer) CreateTrace() *Trace {
 	seededIDLock.Lock()
 	traceID := seededIDGen.Int63()
@@ -110,7 +109,7 @@ func (tracer *Tracer) CreateTrace() *Trace {
 
 // getLogString returns a human-readable representation,
 // of the form:
-//  [identity] TraceID=ID StructType field1=val1, field2=val2, ...
+//  [TracerID] TraceID=ID StructType field1=val1, field2=val2, ...
 func (tracer *Tracer) getLogString(trace *Trace, record interface{}) string {
 	recVal := reflect.ValueOf(record)
 	recType := reflect.TypeOf(record)
@@ -172,7 +171,7 @@ type ReceiveTokenTrace struct {
 
 // ReceiveToken records the token by calling RecordAction with
 // ReceiveTokenTrace.
-// TODO: Currently we don't have trace ID in GoVector output log,
+// TODO: Currently, we don't have trace ID in GoVector output log
 // due to limitations of GoVector library.
 func (tracer *Tracer) ReceiveToken(token TracingToken) *Trace {
 	record := ReceiveTokenTrace{Token: token}
@@ -188,18 +187,21 @@ func (tracer *Tracer) ReceiveToken(token TracingToken) *Trace {
 }
 
 // Close cleans up the connection to the tracing server.
-// To allow for tracing long-running processes and Ctrl^C, this call is unnecessary, as
-// there is no connection state.
+// To allow for tracing long-running processes and Ctrl^C, this call is
+// unnecessary, as there is no connection state. After this call, the use of
+// any previously generated local Trace instances leads to undefined behavior.
 func (tracer *Tracer) Close() error {
 	tracer.lock.Lock()
 	defer tracer.lock.Unlock()
 	return tracer.client.Close()
 }
 
-// SetShouldPrint determines whether RecordAction should log the action being recorded as
-// it sends the action to the tracing server.
-// For more complex applications which have long, involved traces, it may be helpful to
-// silence trace logging.
+// SetShouldPrint determines whether RecordAction should log the action being
+// recorded as it sends the action to the tracing server. In other words, it
+// indicates that the Tracer instance should log (print to stdout) the recorded
+// actions or not.
+// For more complex applications which have long, involved traces, it may be
+// helpful to silence trace logging.
 func (tracer *Tracer) SetShouldPrint(shouldPrint bool) {
 	tracer.shouldPrint = shouldPrint
 }
