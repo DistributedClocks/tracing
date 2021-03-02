@@ -118,6 +118,7 @@ func (tracingServer *TracingServer) Close() error {
 
 type RecordActionArg struct {
 	TracerIdentity string
+	TraceID        uint64
 	RecordName     string
 	Record         []byte
 }
@@ -128,11 +129,13 @@ type RecordActionResult struct{}
 func (actionRecorder *ActionRecorder) RecordAction(arg RecordActionArg, result *RecordActionResult) error {
 	type TraceRecord struct {
 		TracerIdentity string
+		TraceID        uint64
 		Tag            string
 		Body           json.RawMessage
 	}
 	wrappedRecord := TraceRecord{
 		TracerIdentity: arg.TracerIdentity,
+		TraceID:        arg.TraceID,
 		Tag:            arg.RecordName,
 		Body:           arg.Record,
 	}

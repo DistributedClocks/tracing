@@ -24,9 +24,9 @@ type Reply struct {
 }
 
 func (p *Person) GetName(args Args, reply *Reply) error {
-	p.tracer.ReceiveToken(args.Token)
+	trace := p.tracer.ReceiveToken(args.Token)
 	reply.Name = p.name
-	reply.Token = p.tracer.GenerateToken()
+	reply.Token = trace.GenerateToken()
 	return nil
 }
 
@@ -53,7 +53,8 @@ func server(done chan int) {
 		log.Fatal(err)
 	}
 
-	tracer.RecordAction(ServerStart{Port: serverPort})
+	trace := tracer.CreateTrace()
+	trace.RecordAction(ServerStart{Port: serverPort})
 	done <- 1
 
 	rpc.Accept(listener)
@@ -71,13 +72,15 @@ func client(done chan int) {
 	tracer := tracing.NewTracerFromFile("client_config.json")
 	defer tracer.Close()
 
+	trace := tracer.CreateTrace()
+
 	client, err := rpc.Dial("tcp", serverPort)
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
-	tracer.RecordAction(ClientStart{ServerPort: serverPort})
+	trace.RecordAction(ClientStart{ServerPort: serverPort})
 
-	args := Args{Token: tracer.GenerateToken()}
+	args := Args{Token: trace.GenerateToken()}
 	var reply *Reply
 	err = client.Call("Person.GetName", args, &reply)
 	if err != nil {
@@ -86,7 +89,7 @@ func client(done chan int) {
 	fmt.Printf("GetName: %s\n", reply.Name)
 	tracer.ReceiveToken(reply.Token)
 
-	tracer.RecordAction(ClientFinish{ServerPort: serverPort})
+	trace.RecordAction(ClientFinish{ServerPort: serverPort})
 	done <- 1
 }
 

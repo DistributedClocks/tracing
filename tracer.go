@@ -3,8 +3,10 @@ package tracing
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"reflect"
 	"sync"
+	"time"
 
 	"encoding/json"
 	"io/ioutil"
@@ -16,17 +18,19 @@ import (
 // TracingToken is an abstract token to be used when tracing
 // message passing between network nodes.
 //
-// A one-time-use token can be retrieved using Tracer.GenerateToken,
+// A one-time-use token can be retrieved using Trace.GenerateToken,
 // and the "reception" of that token can be recorded using
 // Tracer.ReceiveToken.
 type TracingToken []byte
 
+// TracerConfig contains the necessary configuration options for a tracer.
 type TracerConfig struct {
 	ServerAddress  string // address of the server to send traces to
 	TracerIdentity string // a unique string identifying the tracer
 	Secret         []byte // TODO
 }
 
+// Tracer is the tracing client.
 type Tracer struct {
 	lock        sync.Mutex
 	identity    string
@@ -77,15 +81,47 @@ func NewTracer(config TracerConfig) *Tracer {
 	return tracer
 }
 
+var (
+	seededIDGen = rand.New(rand.NewSource(time.Now().UnixNano()))
+	// NewSource returns a new pseudo-random Source seeded with the given value.
+	// Unlike the default Source used by top-level functions, this source is not
+	// safe for concurrent use by multiple goroutines. Hence the need for a mutex.
+	seededIDLock sync.Mutex
+)
+
+// CreateTrace is an action that indicates creation of a trace.
+type CreateTrace struct{}
+
+// CreateTrace creates a new trace object with a unique ID. Also, it records a
+// CreateTrace action.
+// TODO
+func (tracer *Tracer) CreateTrace() *Trace {
+	seededIDLock.Lock()
+	traceID := seededIDGen.Int63()
+	seededIDLock.Unlock()
+
+	trace := &Trace{
+		ID:     uint64(traceID),
+		Tracer: tracer,
+	}
+	trace.RecordAction(CreateTrace{})
+	return trace
+}
+
 // getLogString returns a human-readable representation,
-// of the form "[identity] StructType field1=val1, field2=val2, ..."
-func (tracer *Tracer) getLogString(record interface{}) string {
+// of the form:
+//  [identity] TraceID=ID StructType field1=val1, field2=val2, ...
+func (tracer *Tracer) getLogString(trace *Trace, record interface{}) string {
 	recVal := reflect.ValueOf(record)
 	recType := reflect.TypeOf(record)
 	numFields := recVal.NumField()
 
 	logFormat := "[%s] %s"
 	logParams := []interface{}{tracer.identity, recType.Name()}
+	if trace != nil {
+		logFormat = "[%s] TraceID=%d %s"
+		logParams = []interface{}{tracer.identity, trace.ID, recType.Name()}
+	}
 	{
 		isFirst := true
 		for i := 0; i < numFields; i++ {
@@ -102,15 +138,15 @@ func (tracer *Tracer) getLogString(record interface{}) string {
 	return fmt.Sprintf(logFormat, logParams...)
 }
 
-func (tracer *Tracer) recordAction(record interface{}, isLocalEvent bool) {
+func (tracer *Tracer) recordAction(trace *Trace, record interface{}, isLocalEvent bool) {
 	tracer.lock.Lock()
 	defer tracer.lock.Unlock()
 
 	if tracer.shouldPrint {
-		log.Printf(tracer.getLogString(record))
+		log.Printf(tracer.getLogString(trace, record))
 	}
 	if isLocalEvent {
-		tracer.logger.LogLocalEvent(tracer.getLogString(record), govec.GetDefaultLogOptions())
+		tracer.logger.LogLocalEvent(tracer.getLogString(trace, record), govec.GetDefaultLogOptions())
 	}
 
 	// send data to tracer server
@@ -120,6 +156,7 @@ func (tracer *Tracer) recordAction(record interface{}, isLocalEvent bool) {
 	}
 	err = tracer.client.Call("ActionRecorder.RecordAction", RecordActionArg{
 		TracerIdentity: tracer.identity,
+		TraceID:        trace.ID,
 		RecordName:     reflect.TypeOf(record).Name(),
 		Record:         marshaledRecord,
 	}, nil)
@@ -128,47 +165,26 @@ func (tracer *Tracer) recordAction(record interface{}, isLocalEvent bool) {
 	}
 }
 
-// RecordAction ensures that the record is recorded by the tracing server,
-// and optionally logs the record's contents. record can be any struct value; its contents will be extracted via reflection.
-//
-// For example, consider (with tracer id "id"):
-// 	struct MyRecord { Foo string; Bar string }
-// and the call:
-// 	RecordAction(MyRecord{ Foo: "foo", Bar: "bar" })
-//
-// This will result in a log (and relevant tracing data) that contains the following:
-// 	[id] MyRecord Foo="foo", Bar="bar"
-func (tracer *Tracer) RecordAction(record interface{}) {
-	tracer.recordAction(record, true)
-}
-
-type PrepareTokenTrace struct{}
-
-type GenerateTokenTrace struct {
-	Token TracingToken // the generated tracing token
-}
-
-// GenerateToken produces a fresh TracingToken, and records the event via RecordAction.
-// This allows analysis of the resulting trace to correlate token generation
-// and token reception.
-func (tracer *Tracer) GenerateToken() TracingToken {
-	token := tracer.logger.PrepareSend(tracer.getLogString(PrepareTokenTrace{}),
-		nil, govec.GetDefaultLogOptions())
-	tracer.recordAction(GenerateTokenTrace{Token: token}, false)
-	return token
-}
-
+// ReceiveTokenTrace is an action that indicated receiption of a token.
 type ReceiveTokenTrace struct {
 	Token TracingToken // the token that was received.
 }
 
 // ReceiveToken records the token by calling RecordAction with
 // ReceiveTokenTrace.
-func (tracer *Tracer) ReceiveToken(token TracingToken) {
+// TODO: Currently we don't have trace ID in GoVector output log,
+// due to limitations of GoVector library.
+func (tracer *Tracer) ReceiveToken(token TracingToken) *Trace {
 	record := ReceiveTokenTrace{Token: token}
-	tracer.recordAction(record, false)
-	tracer.logger.UnpackReceive(tracer.getLogString(record),
-		token, nil, govec.GetDefaultLogOptions())
+	var traceID uint64
+	tracer.logger.UnpackReceive(tracer.getLogString(nil, record),
+		token, &traceID, govec.GetDefaultLogOptions())
+	trace := &Trace{
+		ID:     traceID,
+		Tracer: tracer,
+	}
+	tracer.recordAction(trace, record, false)
+	return trace
 }
 
 // Close cleans up the connection to the tracing server.
