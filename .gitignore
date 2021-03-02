@@ -14,5 +14,9 @@
 # The GoVector log files from the tests
 *.txt
 
+# The generated log files
+*.log
+
 # Dependency directories (remove the comment below to include it)
 # vendor/
+.idea/
