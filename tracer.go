@@ -177,8 +177,6 @@ type ReceiveTokenTrace struct {
 
 // ReceiveToken records the token by calling RecordAction with
 // ReceiveTokenTrace.
-// TODO: Currently, we don't have trace ID in GoVector output log
-// due to limitations of GoVector library.
 func (tracer *Tracer) ReceiveToken(token TracingToken) *Trace {
 	record := ReceiveTokenTrace{Token: token}
 	var traceID uint64
