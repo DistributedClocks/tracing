@@ -70,12 +70,15 @@ func NewTracer(config TracerConfig) *Tracer {
 		log.Fatal("dialing server: ", err)
 	}
 
+	goLogConfig := govec.GetDefaultConfig()
+	goLogConfig.LogToFile = false
+
 	tracer := &Tracer{
 		client:      client,
 		identity:    config.TracerIdentity,
 		shouldPrint: true,
 		logger: govec.InitGoVector(config.TracerIdentity,
-			"GoVector-"+config.TracerIdentity, govec.GetDefaultConfig()),
+			"GoVector-"+config.TracerIdentity, goLogConfig),
 	}
 
 	return tracer
@@ -110,6 +113,8 @@ func (tracer *Tracer) CreateTrace() *Trace {
 // getLogString returns a human-readable representation,
 // of the form:
 //  [TracerID] TraceID=ID StructType field1=val1, field2=val2, ...
+// Note that we are not logging vector clock, but we send it to the
+// tracing server.
 func (tracer *Tracer) getLogString(trace *Trace, record interface{}) string {
 	recVal := reflect.ValueOf(record)
 	recType := reflect.TypeOf(record)
@@ -158,6 +163,7 @@ func (tracer *Tracer) recordAction(trace *Trace, record interface{}, isLocalEven
 		TraceID:        trace.ID,
 		RecordName:     reflect.TypeOf(record).Name(),
 		Record:         marshaledRecord,
+		VectorClock:    tracer.logger.GetCurrentVC(),
 	}, nil)
 	if err != nil {
 		log.Print("error recording action to remote: ", err)
@@ -171,8 +177,6 @@ type ReceiveTokenTrace struct {
 
 // ReceiveToken records the token by calling RecordAction with
 // ReceiveTokenTrace.
-// TODO: Currently, we don't have trace ID in GoVector output log
-// due to limitations of GoVector library.
 func (tracer *Tracer) ReceiveToken(token TracingToken) *Trace {
 	record := ReceiveTokenTrace{Token: token}
 	var traceID uint64

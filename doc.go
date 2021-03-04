@@ -19,12 +19,9 @@ of a given action.
 These reports generally double as logging statements, which can be turned
 off and on with Tracer.SetShouldPrint.
 
-For each Tracer instance, the tracing library will generate a local logfile in the
-following format: GoVector-{NodeName}-Log.txt. You can use these logs with ShiViz
-to visualize the execution of your system.
-
 The TracingServer will aggregate all recorded actions and write them out to
 a JSON file, which can be used both for grading and for debugging via
-external processing.
+external processing. Moreover, tracing server generates a ShiViz-compatible
+log that can be used with ShiViz to visualize the execution of the system.
 */
 package tracing
