@@ -143,14 +143,11 @@ func (tracer *Tracer) getLogString(trace *Trace, record interface{}) string {
 }
 
 func (tracer *Tracer) recordAction(trace *Trace, record interface{}, isLocalEvent bool) {
-	tracer.lock.Lock()
-	defer tracer.lock.Unlock()
-
-	if tracer.shouldPrint {
-		log.Printf(tracer.getLogString(trace, record))
-	}
 	if isLocalEvent {
 		tracer.logger.LogLocalEvent(tracer.getLogString(trace, record), govec.GetDefaultLogOptions())
+	}
+	if tracer.shouldPrint {
+		log.Printf(tracer.getLogString(trace, record))
 	}
 
 	// send data to tracer server
@@ -178,6 +175,9 @@ type ReceiveTokenTrace struct {
 // ReceiveToken records the token by calling RecordAction with
 // ReceiveTokenTrace.
 func (tracer *Tracer) ReceiveToken(token TracingToken) *Trace {
+	tracer.lock.Lock()
+	defer tracer.lock.Unlock()
+
 	record := ReceiveTokenTrace{Token: token}
 	var traceID uint64
 	tracer.logger.UnpackReceive(tracer.getLogString(nil, record),
@@ -207,5 +207,8 @@ func (tracer *Tracer) Close() error {
 // For more complex applications which have long, involved traces, it may be
 // helpful to silence trace logging.
 func (tracer *Tracer) SetShouldPrint(shouldPrint bool) {
+	tracer.lock.Lock()
+	defer tracer.lock.Unlock()
+
 	tracer.shouldPrint = shouldPrint
 }

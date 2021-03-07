@@ -29,6 +29,9 @@ type Trace struct {
 // This will result in a log (and relevant tracing data) that contains the following:
 //  [TracerID] TraceID=ID MyRecord Foo="foo", Bar="bar"
 func (trace *Trace) RecordAction(record interface{}) {
+	trace.Tracer.lock.Lock()
+	defer trace.Tracer.lock.Unlock()
+
 	trace.Tracer.recordAction(trace, record, true)
 }
 
@@ -45,6 +48,9 @@ type GenerateTokenTrace struct {
 // This allows analysis of the resulting trace to correlate token generation
 // and token reception.
 func (trace *Trace) GenerateToken() TracingToken {
+	trace.Tracer.lock.Lock()
+	defer trace.Tracer.lock.Unlock()
+
 	token := trace.Tracer.logger.PrepareSend(trace.Tracer.getLogString(trace, PrepareTokenTrace{}),
 		trace.ID, govec.GetDefaultLogOptions())
 	trace.Tracer.recordAction(trace, GenerateTokenTrace{Token: token}, false)
