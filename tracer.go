@@ -141,12 +141,7 @@ func (tracer *Tracer) getLogString(trace *Trace, record interface{}) string {
 			for valueToLog.Kind() == reflect.Ptr && !valueToLog.IsNil() {
 				valueToLog = reflect.Indirect(valueToLog)
 			}
-			// if nil, log the string "nil", otherwise log what we found
-			ifaceToLog := valueToLog.Interface()
-			if valueToLog.Kind() == reflect.Ptr && valueToLog.IsNil() {
-				ifaceToLog = "nil"
-			}
-			logParams = append(logParams, ifaceToLog)
+			logParams = append(logParams, valueToLog.Interface())
 		}
 	}
 	return fmt.Sprintf(logFormat, logParams...)
