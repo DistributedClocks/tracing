@@ -18,6 +18,10 @@ type TestAction struct {
 	Foo string
 }
 
+type TestAction2 struct {
+	Foo *string
+}
+
 func readTraceOutputFile(t *testing.T, fileName string) (outputs []interface{}) {
 	outF, err := os.Open(fileName)
 	if err != nil {
@@ -101,6 +105,10 @@ func TestOneRecord(t *testing.T) {
 		trace := client1.CreateTrace()
 		traceID = trace.ID
 		trace.RecordAction(TestAction{Foo: "foo"})
+
+		bar := "bar"
+		trace.RecordAction(TestAction2{Foo: &bar})
+		trace.RecordAction(TestAction2{Foo: nil})
 	})()
 
 	outputs := readTraceOutputFile(t, outputFile.Name())
@@ -121,6 +129,24 @@ func TestOneRecord(t *testing.T) {
 			"Body":           map[string]interface{}{"Foo": "foo"},
 			"VectorClock": map[string]interface{}{
 				"client1": intToJSONNubmer(2),
+			},
+		},
+		map[string]interface{}{
+			"TracerIdentity": "client1",
+			"TraceID":        traceIDtoJSONNumber(traceID),
+			"Tag":            "TestAction2",
+			"Body":           map[string]interface{}{"Foo": "bar"},
+			"VectorClock": map[string]interface{}{
+				"client1": intToJSONNubmer(3),
+			},
+		},
+		map[string]interface{}{
+			"TracerIdentity": "client1",
+			"TraceID":        traceIDtoJSONNumber(traceID),
+			"Tag":            "TestAction2",
+			"Body":           map[string]interface{}{"Foo": nil},
+			"VectorClock": map[string]interface{}{
+				"client1": intToJSONNubmer(4),
 			},
 		},
 	}

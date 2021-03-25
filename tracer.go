@@ -136,7 +136,17 @@ func (tracer *Tracer) getLogString(trace *Trace, record interface{}) string {
 				isFirst = false
 			}
 			logFormat += recType.Field(i).Name + "=%v"
-			logParams = append(logParams, recVal.Field(i).Interface())
+			// strip all pointer types (when not nil), so we log the pointed-to value
+			valueToLog := recVal.Field(i)
+			for valueToLog.Kind() == reflect.Ptr && !valueToLog.IsNil() {
+				valueToLog = reflect.Indirect(valueToLog)
+			}
+			// if nil, log the string "nil", otherwise log what we found
+			ifaceToLog := valueToLog.Interface()
+			if valueToLog.Kind() == reflect.Ptr && valueToLog.IsNil() {
+				ifaceToLog = "nil"
+			}
+			logParams = append(logParams, ifaceToLog)
 		}
 	}
 	return fmt.Sprintf(logFormat, logParams...)
