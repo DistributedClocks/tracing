@@ -411,3 +411,67 @@ func TestTokenActions(t *testing.T) {
 		t.Fatalf("expected go vector output %v did not equal actual go vector output %v", shivizExpected, shivizOutputs)
 	}
 }
+
+func TestTracerRejoin(t *testing.T) {
+	outputFile, err := ioutil.TempFile("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(outputFile.Name())
+
+	shivizOutputFile, err := ioutil.TempFile("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(shivizOutputFile.Name())
+
+	(func() {
+		server := NewTracingServer(TracingServerConfig{
+			ServerBind:       ":0",
+			Secret:           []byte{},
+			OutputFile:       outputFile.Name(),
+			ShivizOutputFile: shivizOutputFile.Name(),
+		})
+
+		err = server.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		serverBind := server.Listener.Addr().String()
+		defer server.Close()
+		go server.Accept()
+
+		tracerIdentity := "client1"
+		c := NewTracer(TracerConfig{
+			ServerAddress:  serverBind,
+			TracerIdentity: tracerIdentity,
+			Secret:         []byte{},
+		})
+		defer c.Close()
+		trace := c.CreateTrace()
+		trace.RecordAction(TestAction{Foo: "foo"})
+		trace.RecordAction(TestAction{Foo: "bar"})
+
+		cRejoined := NewTracer(TracerConfig{
+			ServerAddress:  serverBind,
+			TracerIdentity: tracerIdentity,
+			Secret:         []byte{},
+		})
+		defer cRejoined.Close()
+
+		clock, ok := c.logger.GetCurrentVC().FindTicks(tracerIdentity)
+		if !ok {
+			t.Fatal("tracerIdentity not found in vector clock")
+		}
+
+		rejoinedClock, ok := cRejoined.logger.GetCurrentVC().FindTicks(tracerIdentity)
+		if !ok {
+			t.Fatal("tracerIdentity not found in vector clock")
+		}
+
+		if clock != rejoinedClock {
+			t.Fatal("rejoined tracer clock value is not equal to intial tracer clock value")
+		}
+	})()
+
+}

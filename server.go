@@ -30,12 +30,13 @@ type TracingServer struct {
 	Config           *TracingServerConfig
 	shivizRecordFile *os.File
 	shivizLogger     *shivizLogger
+	lastVC           vclock.VClock
 }
 
-// ActionRecorder is an abstraction to prevent registering non-RPC functions
-// in the RPC server. ActionRecorder should be used with rpc.Register, as an
+// RPCProvider is an abstraction to prevent registering non-RPC functions
+// in the RPC server. RPCProvider should be used with rpc.Register, as an
 // RPC target.
-type ActionRecorder struct {
+type RPCProvider struct {
 	server *TracingServer
 }
 
@@ -68,6 +69,7 @@ func NewTracingServer(config TracingServerConfig) *TracingServer {
 	tracingServer := &TracingServer{
 		acceptDone: make(chan struct{}),
 		Config:     &config,
+		lastVC:     vclock.New(),
 	}
 	return tracingServer
 }
@@ -97,8 +99,8 @@ func (tracingServer *TracingServer) Open() error {
 	}
 
 	tracingServer.rpcServer = rpc.NewServer()
-	actionRecorder := &ActionRecorder{server: tracingServer}
-	err := tracingServer.rpcServer.Register(actionRecorder)
+	rpcProvider := &RPCProvider{server: tracingServer}
+	err := tracingServer.rpcServer.Register(rpcProvider)
 	if err != nil {
 		return err
 	}
@@ -174,7 +176,7 @@ type TraceRecord struct {
 // tagging the record with its type name.
 // It also tags the result with TracerIdentity, which tracks the identity given
 // to the tracer reporting the event.
-func (actionRecorder *ActionRecorder) RecordAction(arg RecordActionArg, result *RecordActionResult) error {
+func (rp *RPCProvider) RecordAction(arg RecordActionArg, result *RecordActionResult) error {
 	wrappedRecord := TraceRecord{
 		TracerIdentity: arg.TracerIdentity,
 		TraceID:        arg.TraceID,
@@ -182,11 +184,26 @@ func (actionRecorder *ActionRecorder) RecordAction(arg RecordActionArg, result *
 		Body:           arg.Record,
 		VectorClock:    arg.VectorClock,
 	}
-	if err := actionRecorder.server.recordEncoder.Encode(wrappedRecord); err != nil {
+	rp.server.lastVC.Merge(arg.VectorClock)
+	if err := rp.server.recordEncoder.Encode(wrappedRecord); err != nil {
 		return err
 	}
-	if err := actionRecorder.server.shivizLogger.log(wrappedRecord); err != nil {
+	if err := rp.server.shivizLogger.log(wrappedRecord); err != nil {
 		return err
+	}
+	return nil
+}
+
+type GetLastClockArg string
+
+type GetLastClockResult uint64
+
+func (rp *RPCProvider) GetLastClock(arg GetLastClockArg, result *GetLastClockResult) error {
+	value, ok := rp.server.lastVC.FindTicks(string(arg))
+	if !ok {
+		*result = GetLastClockResult(0)
+	} else {
+		*result = GetLastClockResult(value)
 	}
 	return nil
 }
