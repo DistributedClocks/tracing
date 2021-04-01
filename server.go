@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/rpc"
 	"os"
+	"sync"
 
 	"github.com/DistributedClocks/GoVector/govec/vclock"
 )
@@ -30,7 +31,9 @@ type TracingServer struct {
 	Config           *TracingServerConfig
 	shivizRecordFile *os.File
 	shivizLogger     *shivizLogger
-	lastVC           vclock.VClock
+
+	lock   sync.RWMutex
+	lastVC vclock.VClock
 }
 
 // RPCProvider is an abstraction to prevent registering non-RPC functions
@@ -184,7 +187,11 @@ func (rp *RPCProvider) RecordAction(arg RecordActionArg, result *RecordActionRes
 		Body:           arg.Record,
 		VectorClock:    arg.VectorClock,
 	}
+
+	rp.server.lock.Lock()
 	rp.server.lastVC.Merge(arg.VectorClock)
+	rp.server.lock.Unlock()
+
 	if err := rp.server.recordEncoder.Encode(wrappedRecord); err != nil {
 		return err
 	}
@@ -199,6 +206,9 @@ type GetLastClockArg string
 type GetLastClockResult uint64
 
 func (rp *RPCProvider) GetLastClock(arg GetLastClockArg, result *GetLastClockResult) error {
+	rp.server.lock.RLock()
+	defer rp.server.lock.RUnlock()
+
 	value, ok := rp.server.lastVC.FindTicks(string(arg))
 	if !ok {
 		*result = GetLastClockResult(0)
