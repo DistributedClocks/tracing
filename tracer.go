@@ -70,8 +70,16 @@ func NewTracer(config TracerConfig) *Tracer {
 		log.Fatal("dialing server: ", err)
 	}
 
+	// TODO: make this call optional
+	var initialClock uint64 = 0
+	err = client.Call("RPCProvider.GetLastClock", config.TracerIdentity, &initialClock)
+	if err != nil {
+		log.Println("cannot fetch intial clock value from tracing server:", err)
+	}
+
 	goLogConfig := govec.GetDefaultConfig()
 	goLogConfig.LogToFile = false
+	goLogConfig.InitialClock = initialClock
 
 	tracer := &Tracer{
 		client:      client,
@@ -152,7 +160,7 @@ func (tracer *Tracer) recordAction(trace *Trace, record interface{}, isLocalEven
 		tracer.logger.LogLocalEvent(tracer.getLogString(trace, record), govec.GetDefaultLogOptions())
 	}
 	if tracer.shouldPrint {
-		log.Printf(tracer.getLogString(trace, record))
+		log.Print(tracer.getLogString(trace, record))
 	}
 
 	// send data to tracer server
@@ -160,7 +168,7 @@ func (tracer *Tracer) recordAction(trace *Trace, record interface{}, isLocalEven
 	if err != nil {
 		log.Print("error marshaling record: ", err)
 	}
-	err = tracer.client.Call("ActionRecorder.RecordAction", RecordActionArg{
+	err = tracer.client.Call("RPCProvider.RecordAction", RecordActionArg{
 		TracerIdentity: tracer.identity,
 		TraceID:        trace.ID,
 		RecordName:     reflect.TypeOf(record).Name(),
