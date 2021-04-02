@@ -13,6 +13,7 @@ import (
 	"net/rpc"
 
 	"github.com/DistributedClocks/GoVector/govec"
+	"github.com/DistributedClocks/GoVector/govec/vclock"
 )
 
 // TracingToken is an abstract token to be used when tracing
@@ -70,16 +71,15 @@ func NewTracer(config TracerConfig) *Tracer {
 		log.Fatal("dialing server: ", err)
 	}
 
-	// TODO: make this call optional
-	var initialClock uint64 = 0
-	err = client.Call("RPCProvider.GetLastClock", config.TracerIdentity, &initialClock)
-	if err != nil {
-		log.Println("cannot fetch intial clock value from tracing server:", err)
-	}
-
 	goLogConfig := govec.GetDefaultConfig()
 	goLogConfig.LogToFile = false
-	goLogConfig.InitialClock = initialClock
+
+	// TODO: make this call optional
+	var initialVC vclock.VClock
+	err = client.Call("RPCProvider.GetLastVC", config.TracerIdentity, &initialVC)
+	if err == nil {
+		goLogConfig.InitialVC = initialVC.Copy()
+	}
 
 	tracer := &Tracer{
 		client:      client,

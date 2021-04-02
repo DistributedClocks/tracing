@@ -459,17 +459,10 @@ func TestTracerRejoin(t *testing.T) {
 		})
 		defer cRejoined.Close()
 
-		clock, ok := c.logger.GetCurrentVC().FindTicks(tracerIdentity)
-		if !ok {
-			t.Fatal("tracerIdentity not found in vector clock")
-		}
+		vc := c.logger.GetCurrentVC()
+		rejoinedVC := cRejoined.logger.GetCurrentVC()
 
-		rejoinedClock, ok := cRejoined.logger.GetCurrentVC().FindTicks(tracerIdentity)
-		if !ok {
-			t.Fatal("tracerIdentity not found in vector clock")
-		}
-
-		if clock != rejoinedClock {
+		if !cmp.Equal(vc, rejoinedVC) {
 			t.Fatal("rejoined tracer clock value is not equal to intial tracer clock value")
 		}
 	})()

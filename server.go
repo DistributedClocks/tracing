@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"log"
 	"net"
@@ -32,8 +33,8 @@ type TracingServer struct {
 	shivizRecordFile *os.File
 	shivizLogger     *shivizLogger
 
-	lock   sync.RWMutex
-	lastVC vclock.VClock
+	lock    sync.RWMutex
+	lastVCs map[string]vclock.VClock
 }
 
 // RPCProvider is an abstraction to prevent registering non-RPC functions
@@ -72,7 +73,7 @@ func NewTracingServer(config TracingServerConfig) *TracingServer {
 	tracingServer := &TracingServer{
 		acceptDone: make(chan struct{}),
 		Config:     &config,
-		lastVC:     vclock.New(),
+		lastVCs:    make(map[string]vclock.VClock),
 	}
 	return tracingServer
 }
@@ -189,7 +190,7 @@ func (rp *RPCProvider) RecordAction(arg RecordActionArg, result *RecordActionRes
 	}
 
 	rp.server.lock.Lock()
-	rp.server.lastVC.Merge(arg.VectorClock)
+	rp.server.lastVCs[arg.TracerIdentity] = arg.VectorClock
 	rp.server.lock.Unlock()
 
 	if err := rp.server.recordEncoder.Encode(wrappedRecord); err != nil {
@@ -201,19 +202,18 @@ func (rp *RPCProvider) RecordAction(arg RecordActionArg, result *RecordActionRes
 	return nil
 }
 
-type GetLastClockArg string
+type GetLastVCArg string
 
-type GetLastClockResult uint64
+type GetLastVCResult vclock.VClock
 
-func (rp *RPCProvider) GetLastClock(arg GetLastClockArg, result *GetLastClockResult) error {
+func (rp *RPCProvider) GetLastVC(arg GetLastVCArg, result *GetLastVCResult) error {
 	rp.server.lock.RLock()
 	defer rp.server.lock.RUnlock()
 
-	value, ok := rp.server.lastVC.FindTicks(string(arg))
+	vc, ok := rp.server.lastVCs[string(arg)]
 	if !ok {
-		*result = GetLastClockResult(0)
-	} else {
-		*result = GetLastClockResult(value)
+		return errors.New("not found")
 	}
+	*result = GetLastVCResult(vc)
 	return nil
 }
