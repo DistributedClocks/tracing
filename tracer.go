@@ -92,6 +92,35 @@ func NewTracer(config TracerConfig) *Tracer {
 	return tracer
 }
 
+// NewTracer instantiates a fresh tracer client.
+// Not calling Log.Fatal when rpc connection fails
+func NewTracerNonFatal(config TracerConfig) *Tracer {
+	client, err := rpc.Dial("tcp", config.ServerAddress)
+	if err != nil {
+		return nil
+	}
+
+	goLogConfig := govec.GetDefaultConfig()
+	goLogConfig.LogToFile = false
+
+	// TODO: make this call optional
+	var initialVC vclock.VClock
+	err = client.Call("RPCProvider.GetLastVC", config.TracerIdentity, &initialVC)
+	if err == nil {
+		goLogConfig.InitialVC = initialVC.Copy()
+	}
+
+	tracer := &Tracer{
+		client:      client,
+		identity:    config.TracerIdentity,
+		shouldPrint: true,
+		logger: govec.InitGoVector(config.TracerIdentity,
+			"GoVector-"+config.TracerIdentity, goLogConfig),
+	}
+
+	return tracer
+}
+
 var (
 	seededIDGen = rand.New(rand.NewSource(time.Now().UnixNano()))
 	// NewSource returns a new pseudo-random Source seeded with the given value.
